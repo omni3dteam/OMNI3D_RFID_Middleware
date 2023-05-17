@@ -1,26 +1,22 @@
+# Supporting files
 import NFC
 import Duet
 import config
-
+# Libraries
 import logging
 import threading
-
 import time
-
 from ctypes import *
-
 from multiprocessing import Queue
 from systemd.journal import JournalHandler
 from typing import List
-
-# from dsf.connections import CommandConnection
-# from dsf.connections import SubscribeConnection, SubscriptionMode
-
 import traceback
-
+# Python dsf API
 from dsf.connections import InterceptConnection, InterceptionMode
 from dsf.commands.code import CodeType
 from dsf.object_model import MessageType
+
+###### Global objects ######
 
 log = logging.getLogger('nfc')
 log.addHandler(JournalHandler())
@@ -31,7 +27,7 @@ queue_transmit = Queue()
 
 config.init()
 
-###### Below are main threads of NFC Middleware program ######
+###### Below are the main threads of NFC Middleware program ######
 
 # This thread is checking if NFC master is online.
 # will assert error and stop whole programif unable to detect hearbeat
@@ -145,10 +141,7 @@ if __name__ == "__main__":
     mcodes_intercept.start()
 
     while( config.Continue == True ):
-        # if( Duet.is_printing() ==  True):
-        #     time.sleep(1)
-        # else:
-            time.sleep(10)
+        time.sleep(10)
     else:
         heartbeat_thread.join()
         queue_thread.join()
