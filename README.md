@@ -3,7 +3,7 @@
 NFC Middleware is a program responsible for communication with NFC Master. It acts as a translator between UART protocol and GCODE. This translation allows programs with high abstracion to directly interact with RFID system inside OMNI3D industrial printers.
 
 ## System Overview
-
+![NFC system overview drawio](https://github.com/omni3dteam/OMNI3D_NFC_Middleware/assets/127947391/f74e748b-7d84-4bae-9940-1e5f785187d4)
 
 ## List of Mcodes and thier funcionality
 
@@ -27,7 +27,7 @@ Write data to RFID Tag. Returns 0 if succesfull 1 otherwise. Write operation is 
 * **Ennnn** Serial number. Uniqe for every spool, given when first inserted into a database.
 
 ### M5678: Read Data
-Read data stored on RFID Tag. Returns 1 if failed. Read operation is only available if sensor is actively detecing RFID tag. Returns data as parameters, in the same format as described in [M5673](#m5673:-write-data)
+Read data stored on RFID Tag. Returns 1 if failed. Read operation is only available if sensor is actively detecing RFID tag. Returns data as parameters, in the same format as described in [M5673](#M5673:-Write-Data)
 
 
 
