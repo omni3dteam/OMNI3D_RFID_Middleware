@@ -4,6 +4,7 @@ import construct
 import traceback
 import glob
 import config
+from Response import response
 import Duet
 
 def serial_ports():
@@ -66,7 +67,6 @@ class Filament:
             self.assign(filament_data)
         else:
             filament_data = self.return_as_list(bytesarray)
-            #TODO Fix this mess...
             self.assign(filament_data)
             
     def return_as_bytes(self):
@@ -98,6 +98,10 @@ def nfc_master_send_filament_data(_filament_data):
 
     buffer =  _filament_data.return_as_bytes()
     nfc_master_send('D'.encode('utf-8'), buffer)
+
+def nfc_master_check_sensor(sensor):
+    nfc_master_send('E'.encode('utf-8'), struct.pack('B' ,sensor))
+
 
 def nfc_master_receive():
     try:
@@ -136,4 +140,11 @@ def handle_msg_C(raw_message):
     parsed_message = raw_message[1:]
     new_filament = Filament(0, parsed_message, True)
     Duet.send_code_m5673(new_filament)
+    pass
+
+def handle_msg_E(raw_message):
+    parsed_message = raw_message[1:]
+    new_response = response(raw_message[0], raw_message[1])
+    config.response_handler.register_pending_response(new_response)
+    print(config.response_handler.responseData)
     pass

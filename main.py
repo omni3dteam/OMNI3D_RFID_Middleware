@@ -38,11 +38,11 @@ def check_heartbeat():
             Continue = True
             time.sleep(10)   
         else:
-            config.Continue = False
+            config.Continue = True
             log.error("NFC Master heartbeat not found") 
             config.error_msg = "NFC Master heartbeat not found"
             break
-    config.Continue = False
+    config.Continue = True
 
 # This thread is reading data from NFC Master. All messages have const size (100 bytes) in order to simplyfy communication.
 # When read is succesfull, read_message thread will push 100 bytes array into FIFO queue named "reception_queue".
@@ -64,10 +64,11 @@ def read_message():
 
 # This thread is parsing received messages. If reception_queue is not empty, it will pop first message and act upon it. 
 # Communication between NFC master and NFC Middleware is done using messages of 100 bytes, in which first byte is used to recognize type of message
-# Message 'A' - used to send heartbeat of NFC Master.
+# Message 'A' - used to send heartbeat of NFC Master
 # Message 'B' - used as Request from NFC master to send filament data.
 # Message 'C' - used to receive filament data from NFC master.
 # Message 'D' - used to send filament data to NFC Master.
+# Message 'E' - used to check if sensor is detecting RFID tag.
 def parse_message():
     while ( config.Continue == True ):
         if(reception_queue.qsize() != 0):
@@ -81,6 +82,9 @@ def parse_message():
                 elif raw_message[0] == 67:   #C - Get filament data from NFC Master
                     log.info("Received filament data")
                     NFC.handle_msg_C(raw_message)
+                elif raw_message[0] == 69:
+                   log.info("Received check response") 
+                   NFC.handle_msg_E(raw_message)
             else:
                 pass
         else:
@@ -90,7 +94,7 @@ def parse_message():
 # This thread is used to react on mcodes for NFC system.
 def intercept_mcodes():
 
-    filters = ["M5678", "M5679","M5680", "M5681", "M5682"]
+    filters = ["M5670","M5673","M5678", "M5679","M5680", "M5681", "M5682"]
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
     intercept_connection.connect()
     try:
@@ -101,13 +105,19 @@ def intercept_mcodes():
             if cde.type == CodeType.MCode and cde.majorNumber == 5678:
                 intercept_connection.resolve_code()
                 Duet.mcode_5678(cde)
+            elif cde.type == CodeType.MCode and cde.majorNumber == 5673:
+                intercept_connection.resolve_code()
             #clear RFID tag
             elif cde.type == CodeType.MCode and cde.majorNumber == 5679:
                 intercept_connection.resolve_code()
                 Duet.mcode_5679(cde)
-            #not assigned
-            elif cde.type == CodeType.MCode and cde.majorNumber == 5680:
-                pass
+            #RFID Tag detecion
+            elif cde.type == CodeType.MCode and cde.majorNumber == 5670:
+                if(Duet.mcode_5670(cde) == 4):
+                    status = "Not detecting RFID Tag"
+                else:
+                    status = "detecting RFID Tag"
+                intercept_connection.resolve_code(MessageType.Success, "Sensor {} is {}".format(cde.parameter("S").as_int(), status))
         #not assigned
             elif cde.type == CodeType.MCode and cde.majorNumber == 5681:
                 pass
@@ -128,7 +138,6 @@ heartbeat_thread = threading.Thread(target=check_heartbeat)
 queue_thread = threading.Thread(target=read_message)
 parsing_thread = threading.Thread(target=parse_message)
 mcodes_intercept = threading.Thread(target=intercept_mcodes)
-
 
 # Main loop. used to start, keep alive, and kill threads when error occures.
 if __name__ == "__main__":

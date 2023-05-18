@@ -1,5 +1,6 @@
 from dsf.connections import CommandConnection
 from dsf.connections import SubscribeConnection, SubscriptionMode
+import config
 
 import NFC
 
@@ -17,18 +18,29 @@ def send_code_m5673(filament_data):
     command_connection = CommandConnection(debug=True)
     command_connection.connect()
 
-    res = command_connection.perform_simple_code("M5673 S{} F{} C{} A{} L{} N{}  D{} O{} R{} E{} ".format(
-                                 filament_data.sensor,
-                                 filament_data.material,
-                                 filament_data.colour,
-                                 filament_data.amount_left,
-                                 filament_data.nominal_value,
-                                 filament_data.is_new,
-                                 filament_data.day,
-                                 filament_data.month,
-                                 filament_data.year,
-                                 filament_data.serial_number,))
+    #FIXME this does not want to send gcode
+    # command_connection.perform_simple_code("M5673 S{} F{} C{} A{} L{} N{}  D{} O{} R{} E{} ".format(
+    #                              filament_data.sensor,
+    #                              filament_data.material,
+    #                              filament_data.colour,
+    #                              filament_data.amount_left,
+    #                              filament_data.nominal_value,
+    #                              filament_data.is_new,
+    #                              filament_data.day,
+    #                              filament_data.month,
+    #                              filament_data.year,
+    #                              filament_data.serial_number,))
 # Read filament as gcode
+def mcode_5670(cde):
+    NFC.nfc_master_check_sensor(cde.parameter("S").as_int())
+    while (config.response_handler.responsePending != True):
+        #TODO timeout this loop
+        pass
+    print(config.response_handler.responseData)
+    sensor_response = config.response_handler.responseData
+    config.response_handler.ack()
+    return sensor_response
+
 def mcode_5678(cde):
     new_filament = NFC.Filament([cde.parameter("S").as_int(), 
                                  cde.parameter("F").as_int(),
