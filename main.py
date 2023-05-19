@@ -12,6 +12,7 @@ from systemd.journal import JournalHandler
 from typing import List
 import traceback
 # Python dsf API
+from dsf.connections import CommandConnection
 from dsf.connections import InterceptConnection, InterceptionMode
 from dsf.commands.code import CodeType
 from dsf.object_model import MessageType
@@ -74,15 +75,15 @@ def parse_message():
         if(reception_queue.qsize() != 0):
             raw_message = reception_queue.get()
             if raw_message != None:
-                if  raw_message[0] == 65:    #A - NFC Master heartbeat
+                if  raw_message[0] == 65:    #A - NFC Master heartbeat.
                     NFC.handle_msg_A()
-                elif raw_message[0] == 66:   #B - Filament Data request
+                elif raw_message[0] == 66:   #B - Filament Data request - ABSOLETE
                     log.info("NFC Master requested filament usage data")
                     NFC.handle_msg_B()
-                elif raw_message[0] == 67:   #C - Get filament data from NFC Master
+                elif raw_message[0] == 67:   #C - Get filament data from NFC Master.
                     log.info("Received filament data")
                     NFC.handle_msg_C(raw_message)
-                elif raw_message[0] == 69:
+                elif raw_message[0] == 69:   #E - Check if one of the sensors is detecting valid RFID Tag.
                    log.info("Received check response") 
                    NFC.handle_msg_E(raw_message)
             else:
@@ -94,34 +95,34 @@ def parse_message():
 # This thread is used to react on mcodes for NFC system.
 def intercept_mcodes():
 
-    filters = ["M5670","M5673","M5678", "M5679","M5680", "M5681", "M5682"]
+    filters = ["M5670", "M5673" ,"M5678", "M5679","M5680", "M5681", "M5682"]
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
     intercept_connection.connect()
     try:
         while True:
-            # Wait for a code to arrive
+            # Wait for a code to arrive.
             cde = intercept_connection.receive_code()
-            #Receive filament data
+            # Request to write data into RFID Tag.
             if cde.type == CodeType.MCode and cde.majorNumber == 5678:
                 intercept_connection.resolve_code()
                 Duet.mcode_5678(cde)
+            # Receive data from RFID (Not in scope of this program. USED ONLY FOR DEBUG. Should be removed to allow other programs to use it. )
             elif cde.type == CodeType.MCode and cde.majorNumber == 5673:
                 intercept_connection.resolve_code()
-            #clear RFID tag
+                Duet.mcode_5678(cde)
+            # Request to clear RFID tag.
             elif cde.type == CodeType.MCode and cde.majorNumber == 5679:
                 intercept_connection.resolve_code()
                 Duet.mcode_5679(cde)
-            #RFID Tag detecion
+            # Request to check RFID sensor status.
             elif cde.type == CodeType.MCode and cde.majorNumber == 5670:
                 if(Duet.mcode_5670(cde) == 4):
                     status = "Not detecting RFID Tag"
                 else:
                     status = "detecting RFID Tag"
                 intercept_connection.resolve_code(MessageType.Success, "Sensor {} is {}".format(cde.parameter("S").as_int(), status))
-        #not assigned
-            elif cde.type == CodeType.MCode and cde.majorNumber == 5681:
-                pass
-            #stop this node
+            
+            #Internal request to stop this thread in case of program failure.
             elif cde.type == CodeType.MCode and cde.majorNumber == 5682:
                 intercept_connection.resolve_code()
                 raise ValueError('Forced stop')   
@@ -134,6 +135,7 @@ def intercept_mcodes():
         intercept_connection.close()
 
 
+### Create threads
 heartbeat_thread = threading.Thread(target=check_heartbeat)
 queue_thread = threading.Thread(target=read_message)
 parsing_thread = threading.Thread(target=parse_message)
@@ -144,6 +146,7 @@ if __name__ == "__main__":
 
     log.info("NFC Middleware started")
 
+    # Start all threads.
     heartbeat_thread.start()
     queue_thread.start()
     parsing_thread.start()

@@ -1,5 +1,9 @@
 from enum import Enum
 
+### Class used to carry data and signals between threads, allowing for kind of asynchronous operations.
+# It aims to create shared memory between threads and give notifications when certain data has arrived.
+# Still mostly work in progress so better description of what it does will be done soon.
+
 class response:
 
     class ResponseType(Enum):

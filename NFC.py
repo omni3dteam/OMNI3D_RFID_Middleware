@@ -7,6 +7,7 @@ import config
 from Response import response
 import Duet
 
+# Helpful function to automatically detect serial port on which NFC Master is present.
 def serial_ports():
 
     ports = glob.glob('/dev/tty[A-Za-z]*')
@@ -16,7 +17,11 @@ def serial_ports():
             return port
         pass
 
+# Open communication channel
 ser = serial.Serial(serial_ports(), 921600, timeout = 1000)
+
+# Class Filament is used to create abstracion layer around data saved on RFID Tag.
+# It contains member functions that are helpful to move this data around program.
 
 class Filament:
 
@@ -43,13 +48,17 @@ class Filament:
                         "year"         / construct.Int8ub,
                         "serial_number"/ construct.Int32un
                     )
+    
+    # Member function used to convert raw bytearray to iterable python list.
     def return_as_list(self, bytesarray):
         received_filament = self.filament_data.parse(bytesarray)
         return [received_filament.sensor, received_filament.material, received_filament.colour, received_filament.amount_left, received_filament.nominal_value, received_filament.is_new, received_filament.day, received_filament.month, received_filament.year, received_filament.serial_number]
     
+    # Member function used to return filament data as list.
     def return_list(self):
         return [self.sensor, self.material, self.colour, self.amount_left, self.nominal_value,self.is_new, self.day, self.month, self.year, self.serial_number]
     
+    # Internal function used to assign new filament data to members.
     def assign(self, filament_data):
         self.sensor        = int(filament_data[0])
         self.material      = int(filament_data[1])
@@ -62,13 +71,23 @@ class Filament:
         self.year          = int(filament_data[8])
         self.serial_number = int(filament_data[9]) 
 
+    # Class constructor. Gives two ways of constructing object.
+    # 1. From python list.
+    # 2. From bytearray.
+    # When calling constructor its important to specify which way should be used by setting bool "from_bytes" as True or False.
+    # This mechanism allows for clean transitions like:
+    # bytes -> wrapped filament data -> list 
+    #                 or
+    #  list -> wrapped filament data -> bytes
+    # used throughout this code.
     def __init__(self, filament_data, bytesarray, from_bytes):
         if(from_bytes == False):
             self.assign(filament_data)
         else:
             filament_data = self.return_as_list(bytesarray)
             self.assign(filament_data)
-            
+
+    # Member function used to return filament data as bytearray. Useful to prepare data befor sending it through UART.      
     def return_as_bytes(self):
 
         buffer =  struct.pack('B' ,self.sensor       )
@@ -83,6 +102,7 @@ class Filament:
         buffer += struct.pack('I' ,self.serial_number)
         return buffer
     
+    # Member function to clear current fields.
     def clear_tag(self):
         self.material      = 0
         self.colour        = 0
@@ -94,15 +114,20 @@ class Filament:
         self.year          = 0
         self.serial_number = 0
 
-def nfc_master_send_filament_data(_filament_data):
+# End of Filament class
 
+### High level functions ###
+def nfc_master_send_filament_data(_filament_data):
     buffer =  _filament_data.return_as_bytes()
     nfc_master_send('D'.encode('utf-8'), buffer)
 
 def nfc_master_check_sensor(sensor):
     nfc_master_send('E'.encode('utf-8'), struct.pack('B' ,sensor))
 
+def nfc_master_clear_tag(sensor):
+    nfc_master_send('B'.encode('utf-8'), struct.pack('B' ,sensor))  
 
+### Low level functions ###
 def nfc_master_receive():
     try:
         ser.timeout = 1
@@ -126,14 +151,14 @@ def nfc_master_send(prefix, data):
     ser.write(buffer)
     return 1
 
+# Handler functions used when parsing messages from NFC Master.
+
 def handle_msg_A():
     # Detecting this message means NFC master is alive
     config.is_master_online = True
     pass
 
 def handle_msg_B():
-    filament_data = Filament([0,1,1,999,10000,0,17,5,12,6000], 0, False)
-    nfc_master_send_filament_data(filament_data)
     pass
 
 def handle_msg_C(raw_message):
