@@ -12,7 +12,7 @@ Check if sensor detetcs RFID Tag. Returns 0 if tag is detected and 1 if not
 #### Parameters 
 * **Sn** Sensor number. Corresponds to extruder number. First extruder is **S0** 
 
-### M5673: Write Data
+### M5678: Write Data
 Write data to RFID Tag. Returns 0 if succesfull 1 otherwise. Write operation is only available if sensor is actively detecing RFID tag. 
 #### Parameters
 * **Sn** Sensor number. Corresponds to extruder number. First extruder is **S0** 
@@ -26,8 +26,8 @@ Write data to RFID Tag. Returns 0 if succesfull 1 otherwise. Write operation is 
 * **Rnn** Year of first use (only two last digits i.e 2023 is R23)
 * **Ennnn** Serial number. Uniqe for every spool, given when first inserted into a database.
 
-### M5678: Read Data
-Read data stored on RFID Tag. Returns 1 if failed. Read operation is only available if sensor is actively detecing RFID tag. Returns data as parameters, in the same format as described in [M5673](#M5673:-Write-Data)
+### M5673: Read Data
+Read data stored on RFID Tag. Returns 1 if failed. Read operation is only available if sensor is actively detecing RFID tag. Returns data as parameters, in the same format as described in [M5678](#M5678:-Write-Data)
 
 ### Service
 NFC Middleware runs on SBC supporting Duet mainboard. It's configured to run as linux service. User can start this service using terminal:
