@@ -1,4 +1,4 @@
-import MessageTypes
+import MessageTypesNfcSystem
 
 def print_filament_data(filament_data, sensor):
     print('''Filament from sensor: %d
