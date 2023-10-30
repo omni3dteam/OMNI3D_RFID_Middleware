@@ -1,0 +1,17 @@
+[Unit]
+Description = NFC system middleware
+After = network.target
+ 
+[Service]
+Type = simple
+WorkingDirectory=/home/pi/OMNI3D_NFC_Middleware
+ExecStart = /usr/bin/python3 /home/pi/OMNI3D_NFC_Middleware/middleware.py
+User = pi
+Group = pi
+Restart = on-failure 
+SyslogIdentifier = nfc_system)logs
+RestartSec = 5
+TimeoutStartSec = infinity
+ 
+[Install]
+WantedBy = multi-user.target

@@ -106,16 +106,19 @@ def intercept_data_write_request():
             # Data request
             if cde.type == CodeType.MCode and cde.majorNumber == 1001:
                 intercept_connection.resolve_code()
-                sensor = cde.parameter("S").as_int()
-                filament_data = MessageTypesNfcSystem.Filament_data(cde.parameter("T").as_int(),
+                try:
+                    sensor = cde.parameter("S").as_int()
+                    filament_data = MessageTypesNfcSystem.Filament_data(cde.parameter("T").as_int(),
                                                            cde.parameter("C").as_int(),
                                                            cde.parameter("A").as_float(),
                                                            cde.parameter("N").as_float(),
                                                            0,0)
-                global filaments_database
-                global write_pending_for_sensor
-                filaments_database[sensor - 1] = filament_data
-                write_pending_for_sensor = (sensor - 1)
+                    global filaments_database
+                    global write_pending_for_sensor
+                    filaments_database[sensor - 1] = filament_data
+                    write_pending_for_sensor = (sensor - 1)
+                except:
+                    pass
             # We did not handle it so we ignore it and it will be continued to be processed
             else:
                 intercept_connection.ignore_code()
@@ -142,13 +145,11 @@ if __name__ == "__main__":
         #log.info("[NFC] Error while initializing slave")
     # Main loop
     while(True):
-        # Receive new filament data #
+        # Receive new filament data
         new_filament_data = MessageTypesNfcSystem.Uni_message(65, current_sensor, MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0), 0)
         new_filament_data = transceive(new_filament_data)
         if new_filament_data != 0:
-            # print("Received Filament: ")
-            # print_filament_data(new_filament_data.filament_data, current_sensor)
-            # Write new data if requested by user (or another instance)  #
+            # Write new data if requested by user (or another instance)
             if write_pending_for_sensor != -1:
                 write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
                 respons = transceive(write_request_message)
@@ -156,9 +157,6 @@ if __name__ == "__main__":
             # Write new data in normal mode
             else:
                 # Get Object model
-                # subscribe_connection = SubscribeConnection(SubscriptionMode.PATCH)
-                # subscribe_connection.connect()
-                # object_model = subscribe_connection.get_object_model()
                 command_connection = CommandConnection(debug=False)
                 command_connection.connect()
                 res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
@@ -182,9 +180,6 @@ if __name__ == "__main__":
                 write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
                 transceive(write_request_message)
                 filaments_database[current_sensor] = new_filament_data.filament_data
-            # Print database entry
-            # print("Database Filament: ")
-            # print_filament_data(filaments_database[current_sensor], current_sensor)
         else:
             print("Received no filament data")
         # Advance sensor
