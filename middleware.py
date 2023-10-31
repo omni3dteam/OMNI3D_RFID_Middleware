@@ -18,6 +18,7 @@ from dsf.connections import SubscribeConnection, SubscriptionMode
 from Coms import *
 from nfc_logging import *
 import MessageTypesNfcSystem
+from lookup_table import GetColour, GetMaterial
 #Global list to store current filaments
 filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1)))
 cached_amount_left = list((0,0,0,0))
@@ -45,12 +46,12 @@ def intercept_data_request():
             # Configuration request
             if cde.type == CodeType.MCode and cde.majorNumber == 1002:
                 intercept_connection.resolve_code()
-                sensor = (cde.parameter("S").as_int() - 1)
+                sensor = (cde.parameter("S").as_int())
                 try:
                     data = {
-                        "sensor": (sensor + 1),
-                        "material": filaments_database[sensor].material,
-                        "colour": filaments_database[sensor].colour,
+                        "sensor": (sensor),
+                        "material": GetMaterial(filaments_database[sensor].material),
+                        "colour": GetColour(filaments_database[sensor].colour),
                         "amount_left": filaments_database[sensor].amount_left,
                         "nominal_value": filaments_database[sensor].nominal_value,
                         "percent_left": ((filaments_database[sensor].amount_left / filaments_database[sensor].nominal_value)*100)
@@ -115,8 +116,8 @@ def intercept_data_write_request():
                                                            0,0)
                     global filaments_database
                     global write_pending_for_sensor
-                    filaments_database[sensor - 1] = filament_data
-                    write_pending_for_sensor = (sensor - 1)
+                    filaments_database[sensor] = filament_data
+                    write_pending_for_sensor = (sensor)
                 except:
                     pass
             # We did not handle it so we ignore it and it will be continued to be processed
@@ -163,7 +164,7 @@ if __name__ == "__main__":
                 object_model = json.loads(res)
                 # Get values
                 try:
-                    raw_extruder_move = object_model["result"][current_sensor]["rawPosition"]
+                    raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
                 except:
                     raw_extruder_move = 0
                 current_amount_left = new_filament_data.filament_data.amount_left
@@ -176,9 +177,12 @@ if __name__ == "__main__":
                 new_filament_data.filament_data.amount_left = new_amount_left
                 #cache amount left
                 cached_amount_left[current_sensor] = raw_extruder_move
-                # Send new data to tag
+                # Get current filament used, defined by used tool
+                res = command_connection.perform_simple_code("T")
+                # Send new data to tag only, if we are printing with selected filament
                 write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
                 transceive(write_request_message)
+                #Update data base
                 filaments_database[current_sensor] = new_filament_data.filament_data
         else:
             print("Received no filament data")

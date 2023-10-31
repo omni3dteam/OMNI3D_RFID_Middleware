@@ -2,8 +2,6 @@ import glob
 import pickle
 import serial
 from serial import *
-import usb.core
-import usb.util
 import time
 import MessageTypesNfcSystem
 import sys
