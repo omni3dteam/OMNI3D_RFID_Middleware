@@ -51,6 +51,5 @@ filament_color_dict = {
 
 def GetMaterial(number):
     return filament_material_dict.get(number, "Unknown")
-
 def GetColour(number):
     return filament_color_dict.get(number, "Unknown")

@@ -5,6 +5,7 @@ import threading
 from ctypes import *
 from multiprocessing import Queue
 import json
+from enum import IntEnum
 #from systemd.journal import JournalHandler
 import traceback
 import sys
@@ -31,6 +32,12 @@ write_pending_for_sensor = -1
 # log.addHandler(JournalHandler())
 # log.setLevel(logging.INFO)
 # Function used to send filament data to higher instances
+# Device states used by State machine
+class States(IntEnum):
+    unconfigured = -1
+    idle_mode = 0
+    printing_mode = 1
+
 def intercept_data_request():
     filters = ["M1002"]
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
@@ -45,7 +52,6 @@ def intercept_data_request():
             cde = intercept_connection.receive_code()
             # Configuration request
             if cde.type == CodeType.MCode and cde.majorNumber == 1002:
-                intercept_connection.resolve_code()
                 sensor = (cde.parameter("S").as_int())
                 try:
                     data = {
@@ -58,7 +64,7 @@ def intercept_data_request():
                         }
                 except:
                     data = {
-                        "sensor": (sensor + 1),
+                        "sensor": (sensor),
                         "material": 0,
                         "colour": 0,
                         "amount_left": 0,
@@ -67,7 +73,7 @@ def intercept_data_request():
                         }
                 finally:
                     message = json.dumps(data)
-                    command_connection.write_message(MessageType.Success, message ,True ,LogLevel.Info)
+                    intercept_connection.resolve_code(MessageType.Success, message)
             # We did not handle it so we ignore it and it will be continued to be processed
             else:
                 intercept_connection.ignore_code()
@@ -81,13 +87,18 @@ def intercept_config_message():
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
     intercept_connection.connect()
     try:
-        while True:
             # Wait for a code to arrive.
-            cde = intercept_connection.receive_code()
+        cde = intercept_connection.receive_code()
             # Configuration request
+        while True:
             if cde.type == CodeType.MCode and cde.majorNumber == 1000:
-                intercept_connection.resolve_code()
-                return cde
+                if configure_slave(cde.parameter("S").as_int()) != 1:
+                    intercept_connection.resolve_code(MessageType.Error, "Failed to configure NFC Slave")
+                    time.sleep(2)
+
+                else:
+                    intercept_connection.resolve_code(MessageType.Success, "NFC Slave configured")
+                    return cde.parameter("S").as_int()
             # We did not handle it so we ignore it and it will be continued to be processed
             else:
                 intercept_connection.ignore_code()
@@ -134,29 +145,28 @@ data_write_request = threading.Thread(target=intercept_data_write_request)
 # Program entry
 if __name__ == "__main__":
 
-    #log.info("NFC Middleware started")
-    # Wait for configuration gcode
-    number_of_sensors = (intercept_config_message().parameter("S").as_int())
+    # Get state from state machine
+    State = States(States.idle_mode)
+    # log.info("NFC Middleware started")
+    # Wait for configuration gcode and cinfigure slave
+    number_of_sensors = intercept_config_message()
     current_sensor = 0
     data_write_request.start()
     data_request.start()
-    # Configure slave device
-    if configure_slave(number_of_sensors) != 1:
-        print("[NFC] Error while initializing slave")
-        #log.info("[NFC] Error while initializing slave")
     # Main loop
     while(True):
         # Receive new filament data
         new_filament_data = MessageTypesNfcSystem.Uni_message(65, current_sensor, MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0), 0)
         new_filament_data = transceive(new_filament_data)
-        if new_filament_data != 0:
-            # Write new data if requested by user (or another instance)
-            if write_pending_for_sensor != -1:
-                write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
-                respons = transceive(write_request_message)
-                write_pending_for_sensor = -1
-            # Write new data in normal mode
-            else:
+        # Write new data if requested by user (or another instance)
+        if write_pending_for_sensor != -1:
+            write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
+            respons = transceive(write_request_message)
+            write_pending_for_sensor = -1
+        # Act on state
+        if State == States.printing_mode:
+            # Procede only if we detected valid tag, else do nothing
+            if new_filament_data.filament_data.colour != 0:
                 # Get Object model
                 command_connection = CommandConnection(debug=False)
                 command_connection.connect()
@@ -184,8 +194,17 @@ if __name__ == "__main__":
                 transceive(write_request_message)
                 #Update data base
                 filaments_database[current_sensor] = new_filament_data.filament_data
+            else:
+                # Do nothing, becasue rfid tag in spool is probably out of range.
+                print("No tag")
         else:
-            print("Received no filament data")
+            # In idle mode, update data base every time we detect valid tag
+            if new_filament_data.filament_data.colour != 0:
+                filaments_database[current_sensor] = new_filament_data.filament_data
+                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+                transceive(write_request_message)
+            else:
+                pass
         # Advance sensor
         current_sensor += 1
         if current_sensor > (number_of_sensors-1):
