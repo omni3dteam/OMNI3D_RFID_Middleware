@@ -65,8 +65,8 @@ def intercept_data_request():
                 except:
                     data = {
                         "sensor": (sensor),
-                        "material": 0,
-                        "colour": 0,
+                        "material": GetMaterial(0),
+                        "colour": GetColour(0),
                         "amount_left": 0,
                         "nominal_value": 0,
                         "percent_left": 0
@@ -201,7 +201,7 @@ if __name__ == "__main__":
             # Get State of Tray sensors:
             res = json.loads(command_connection.perform_simple_code("M1102"))
             sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
-            if(sensor_state[current_sensor]["value"] == 0):
+            if(sensor_state[current_sensor]["value"] == 1):
                 # Clear filament entry because filament have been removed from chamber
                 filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
             else:
