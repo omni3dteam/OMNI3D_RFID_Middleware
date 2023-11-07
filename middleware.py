@@ -153,57 +153,57 @@ if __name__ == "__main__":
     current_sensor = 0
     data_write_request.start()
     data_request.start()
+
+    command_connection = CommandConnection(debug=False)
+    command_connection.connect()
+
     # Main loop
     while(True):
         # Receive new filament data
         new_filament_data = MessageTypesNfcSystem.Uni_message(65, current_sensor, MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0), 0)
         new_filament_data = transceive(new_filament_data)
-        # Write new data if requested by user (or another instance)
+        # Write new data if requested by user (or other instance)
         if write_pending_for_sensor != -1:
             write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
             respons = transceive(write_request_message)
             write_pending_for_sensor = -1
-        # Act on state
-        if State == States.printing_mode:
-            # Procede only if we detected valid tag, else do nothing
-            if new_filament_data.filament_data.colour != 0:
-                # Get Object model
-                command_connection = CommandConnection(debug=False)
-                command_connection.connect()
-                res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
-                object_model = json.loads(res)
-                # Get values
-                try:
-                    raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
-                except:
-                    raw_extruder_move = 0
-                current_amount_left = new_filament_data.filament_data.amount_left
-                # Calculate amount left
-                diff = raw_extruder_move - cached_amount_left[current_sensor]
-                if diff < 0:
-                    diff = 0
-                new_amount_left = current_amount_left - diff
-                # update filament_data
-                new_filament_data.filament_data.amount_left = new_amount_left
-                #cache amount left
-                cached_amount_left[current_sensor] = raw_extruder_move
-                # Get current filament used, defined by used tool
-                res = command_connection.perform_simple_code("T")
-                # Send new data to tag only, if we are printing with selected filament
-                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-                transceive(write_request_message)
-                #Update data base
-                filaments_database[current_sensor] = new_filament_data.filament_data
-            else:
-                # Do nothing, becasue rfid tag in spool is probably out of range.
-                print("No tag")
+        # if we deteced valid tag, perform usual loop
+        if new_filament_data.filament_data.colour != 0:
+            # Get Object model
+            res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
+            object_model = json.loads(res)
+            # Get extruder position
+            try:
+                raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
+            except:
+                raw_extruder_move = 0
+            current_amount_left = new_filament_data.filament_data.amount_left
+            # Calculate amount left
+            diff = raw_extruder_move - cached_amount_left[current_sensor]
+            if diff < 0:
+                diff = 0
+            new_amount_left = current_amount_left - diff
+            # update filament_data
+            new_filament_data.filament_data.amount_left = new_amount_left
+            #cache amount left
+            cached_amount_left[current_sensor] = raw_extruder_move
+            # Get current filament used, defined by used tool
+            res = command_connection.perform_simple_code("T")
+            # Send new data to tag, only if we are printing with selected filament
+            write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+            transceive(write_request_message)
+            #Update data base
+            filaments_database[current_sensor] = new_filament_data.filament_data
         else:
-            # In idle mode, update data base every time we detect valid tag
-            if new_filament_data.filament_data.colour != 0:
-                filaments_database[current_sensor] = new_filament_data.filament_data
-                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-                transceive(write_request_message)
+            # if we did not detected valid tag, check if filament is present in chamber
+            # Get State of Tray sensors:
+            res = json.loads(command_connection.perform_simple_code("M1102"))
+            sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
+            if(sensor_state[current_sensor]["value"] == 1):
+                # Clear filament entry because filament have been removed from chamber
+                filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1)
             else:
+                # do nothing. filament is present becasue sensors indicates it. Spool is out of range of RFID Sensor
                 pass
         # Advance sensor
         current_sensor += 1
