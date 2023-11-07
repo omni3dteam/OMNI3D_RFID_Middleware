@@ -195,13 +195,15 @@ if __name__ == "__main__":
             #Update data base
             filaments_database[current_sensor] = new_filament_data.filament_data
         else:
+            write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+            transceive(write_request_message)
             # if we did not detected valid tag, check if filament is present in chamber
             # Get State of Tray sensors:
             res = json.loads(command_connection.perform_simple_code("M1102"))
             sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
-            if(sensor_state[current_sensor]["value"] == 1):
+            if(sensor_state[current_sensor]["value"] == 0):
                 # Clear filament entry because filament have been removed from chamber
-                filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1)
+                filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
             else:
                 # do nothing. filament is present becasue sensors indicates it. Spool is out of range of RFID Sensor
                 pass
