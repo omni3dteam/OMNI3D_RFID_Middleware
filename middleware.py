@@ -43,9 +43,6 @@ def intercept_data_request():
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
     intercept_connection.connect()
 
-    command_connection = CommandConnection(debug=False)
-    command_connection.connect()
-
     try:
         while True:
             # Wait for a code to arrive.
@@ -87,21 +84,19 @@ def intercept_config_message():
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
     intercept_connection.connect()
     try:
-            # Wait for a code to arrive.
+        # Wait for a code to arrive.
         cde = intercept_connection.receive_code()
-            # Configuration request
-        while True:
-            if cde.type == CodeType.MCode and cde.majorNumber == 1000:
-                if configure_slave(cde.parameter("S").as_int()) != 1:
-                    intercept_connection.resolve_code(MessageType.Error, "Failed to configure NFC Slave")
-                    time.sleep(2)
-
-                else:
-                    intercept_connection.resolve_code(MessageType.Success, "NFC Slave configured")
-                    return cde.parameter("S").as_int()
-            # We did not handle it so we ignore it and it will be continued to be processed
+        # Configuration request
+        if cde.type == CodeType.MCode and cde.majorNumber == 1000:
+            if configure_slave(cde.parameter("S").as_int()) != 1:
+                intercept_connection.resolve_code(MessageType.Error, "Failed to configure NFC Slave")
+                time.sleep(2)
             else:
-                intercept_connection.ignore_code()
+                intercept_connection.resolve_code(MessageType.Success, "NFC Slave configured")
+                return cde.parameter("S").as_int()
+            # We did not handle it so we ignore it and it will be continued to be processed
+        else:
+            intercept_connection.ignore_code()
     except Exception as e:
         print("Closing connection: ", e)
         traceback.print_exc()
@@ -201,7 +196,7 @@ if __name__ == "__main__":
             # Get State of Tray sensors:
             res = json.loads(command_connection.perform_simple_code("M1102"))
             sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
-            if(sensor_state[current_sensor]["value"] == 1):
+            if(sensor_state[current_sensor] == 1):
                 # Clear filament entry because filament have been removed from chamber
                 filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
             else:
