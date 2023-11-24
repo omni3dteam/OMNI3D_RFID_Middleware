@@ -40,7 +40,7 @@ class States(IntEnum):
 
 def intercept_data_request():
     filters = ["M1002"]
-    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
+    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=False)
     intercept_connection.connect()
 
     try:
@@ -81,7 +81,7 @@ def intercept_data_request():
 # Function used to intercept config message
 def intercept_config_message():
     filters = ["M1000"]
-    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
+    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=False)
     intercept_connection.connect()
     try:
         # Wait for a code to arrive.
@@ -104,7 +104,7 @@ def intercept_config_message():
 # Function used to intercept data write request. Used in different thread
 def intercept_data_write_request():
     filters = ["M1001"]
-    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=True)
+    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=False)
     intercept_connection.connect()
     try:
         while True:
@@ -163,48 +163,51 @@ if __name__ == "__main__":
             respons = transceive(write_request_message)
             write_pending_for_sensor = -1
         # if we deteced valid tag, perform usual loop
-        if new_filament_data.filament_data.colour != 0:
-            # Get Object model
-            res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
-            object_model = json.loads(res)
-            # Get extruder position
-            try:
-                raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
-            except:
-                raw_extruder_move = 0
-            current_amount_left = new_filament_data.filament_data.amount_left
-            # Calculate amount left
-            diff = raw_extruder_move - cached_amount_left[current_sensor]
-            if diff < 0:
-                diff = 0
-            new_amount_left = current_amount_left - diff
-            # update filament_data
-            new_filament_data.filament_data.amount_left = new_amount_left
-            #cache amount left
-            cached_amount_left[current_sensor] = raw_extruder_move
-            # Get current filament used, defined by used tool
-            res = command_connection.perform_simple_code("T")
-            # Send new data to tag, only if we are printing with selected filament
-            write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-            transceive(write_request_message)
-            #Update data base
-            filaments_database[current_sensor] = new_filament_data.filament_data
-        else:
-            write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-            transceive(write_request_message)
-            # if we did not detected valid tag, check if filament is present in chamber
-            # Get State of Tray sensors:
-            try:
-                # res = json.loads(command_connection.perform_simple_code("M1102"))
-                # sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
-                res = command_connection.perform_simple_code("""M409 K"'sensors.gpIn"'""")
-                parsed_json = json.loads(res)["result"]
-                sensor_state = [parsed_json[6]["value"], parsed_json[7]["value"], parsed_json[8]["value"], parsed_json[4]["value"]]
-                if(sensor_state[current_sensor] == 1):
-                    # Clear filament entry because filament have been removed from chamber
-                    filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
-            except Exception as e:
-                print(e)
+        try:
+            if new_filament_data.filament_data.colour != 0:
+                # Get Object model
+                res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
+                object_model = json.loads(res)
+                # Get extruder position
+                try:
+                    raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
+                except:
+                    raw_extruder_move = 0
+                current_amount_left = new_filament_data.filament_data.amount_left
+                # Calculate amount left
+                diff = raw_extruder_move - cached_amount_left[current_sensor]
+                if diff < 0:
+                    diff = 0
+                new_amount_left = current_amount_left - diff
+                # update filament_data
+                new_filament_data.filament_data.amount_left = new_amount_left
+                #cache amount left
+                cached_amount_left[current_sensor] = raw_extruder_move
+                # Get current filament used, defined by used tool
+                res = command_connection.perform_simple_code("T")
+                # Send new data to tag, only if we are printing with selected filament
+                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+                transceive(write_request_message)
+                #Update data base
+                filaments_database[current_sensor] = new_filament_data.filament_data
+            else:
+                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+                transceive(write_request_message)
+                # if we did not detected valid tag, check if filament is present in chamber
+                # Get State of Tray sensors:
+                try:
+                    # res = json.loads(command_connection.perform_simple_code("M1102"))
+                    # sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
+                    res = command_connection.perform_simple_code("""M409 K"'sensors.gpIn"'""")
+                    parsed_json = json.loads(res)["result"]
+                    sensor_state = [parsed_json[7]["value"], parsed_json[8]["value"], parsed_json[9]["value"], parsed_json[10]["value"]]
+                    if(sensor_state[current_sensor] == 1):
+                        # Clear filament entry because filament have been removed from chamber
+                        filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
+                except Exception as e:
+                    print(e)
+        except Exception as e:
+            print(e)
         # Advance sensor
         current_sensor += 1
         if current_sensor > (number_of_sensors-1):
