@@ -1,5 +1,4 @@
 # Libraries
-import logging
 import time
 import threading
 from ctypes import *
@@ -8,7 +7,6 @@ import json
 from enum import IntEnum
 #from systemd.journal import JournalHandler
 import traceback
-import sys
 # Python dsf API
 from dsf.connections import CommandConnection
 from dsf.connections import InterceptConnection, InterceptionMode
@@ -20,24 +18,69 @@ from Coms import *
 from nfc_logging import *
 import MessageTypesNfcSystem
 from lookup_table import GetColour, GetMaterial
+subscribe_connection = SubscribeConnection(SubscriptionMode.FULL)
+subscribe_connection.connect()
 #Global list to store current filaments
-filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,-1,-1,-1,-1)))
+filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)))
 cached_amount_left = list((0,0,0,0))
 #Global variables and flags
 spin_delay = 2000
 last_nfc_check = 0
 write_pending_for_sensor = -1
-# log object used to log to journal
-# log = logging.getLogger('nfc')
-# log.addHandler(JournalHandler())
-# log.setLevel(logging.INFO)
-# Function used to send filament data to higher instances
-# Device states used by State machine
-class States(IntEnum):
-    unconfigured = -1
-    idle_mode = 0
-    printing_mode = 1
 
+log.info("RFID Middleware started")
+def intercept_full_data_request():
+    filters = ["M1003"]
+    intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=False)
+    intercept_connection.connect()
+    try:
+        while True:
+            # Wait for a code to arrive.
+            cde = intercept_connection.receive_code()
+            # Configuration request
+            if cde.type == CodeType.MCode and cde.majorNumber == 1003:
+                try:
+                    data = {
+                        "material":[GetMaterial(filaments_database[0].material),
+                                    GetMaterial(filaments_database[1].material),
+                                    GetMaterial(filaments_database[2].material),
+                                    GetMaterial(filaments_database[3].material)],
+                        "colour":  [GetColour  (filaments_database[0].colour),
+                                    GetColour  (filaments_database[1].colour),
+                                    GetColour  (filaments_database[2].colour),
+                                    GetColour  (filaments_database[3].colour)],
+                        "amount_left": [filaments_database[0].amount_left,
+                                        filaments_database[1].amount_left,
+                                        filaments_database[2].amount_left,
+                                        filaments_database[3].amount_left],
+                        "nominal_value": [filaments_database[0].nominal_value,
+                                          filaments_database[1].nominal_value,
+                                          filaments_database[2].nominal_value,
+                                          filaments_database[3].nominal_value],
+                        "percent_left": [((filaments_database[0].amount_left / filaments_database[0].nominal_value)*100),
+                                         ((filaments_database[1].amount_left / filaments_database[1].nominal_value)*100),
+                                         ((filaments_database[2].amount_left / filaments_database[2].nominal_value)*100),
+                                         ((filaments_database[3].amount_left / filaments_database[3].nominal_value)*100)]
+                        }
+                except Exception as e:
+                        print(e)
+                        data = {
+                            "material": [0,0,0,0],
+                            "colour": [0,0,0,0],
+                            "amount_left": [0,0,0,0],
+                            "nominal_value": [0,0,0,0],
+                            "percent_left": [0,0,0,0],
+                            }
+                finally:
+                        message = json.dumps(data)
+                        intercept_connection.resolve_code(MessageType.Success, message)
+            # We did not handle it so we ignore it and it will be continued to be processed
+            else:
+                intercept_connection.ignore_code()
+    except Exception as e:
+        print("Closing connection: ", e)
+        traceback.print_exc()
+        intercept_connection.close()
 def intercept_data_request():
     filters = ["M1002"]
     intercept_connection = InterceptConnection(InterceptionMode.PRE, filters=filters, debug=False)
@@ -91,6 +134,7 @@ def intercept_config_message():
             if configure_slave(cde.parameter("S").as_int()) != 1:
                 intercept_connection.resolve_code(MessageType.Error, "Failed to configure NFC Slave")
                 time.sleep(2)
+                return 0
             else:
                 intercept_connection.resolve_code(MessageType.Success, "NFC Slave configured")
                 return cde.parameter("S").as_int()
@@ -135,19 +179,18 @@ def intercept_data_write_request():
         intercept_connection.close()
 
 data_request       = threading.Thread(target=intercept_data_request)
+full_data_request  = threading.Thread(target=intercept_full_data_request)
 data_write_request = threading.Thread(target=intercept_data_write_request)
 
 # Program entry
 if __name__ == "__main__":
 
-    # Get state from state machine
-    State = States(States.idle_mode)
-    # log.info("NFC Middleware started")
     # Wait for configuration gcode and cinfigure slave
     number_of_sensors = intercept_config_message()
     current_sensor = 0
     data_write_request.start()
     data_request.start()
+    full_data_request.start()
 
     command_connection = CommandConnection(debug=False)
     command_connection.connect()
@@ -155,62 +198,69 @@ if __name__ == "__main__":
     # Main loop
     while(True):
         # Receive new filament data
-        new_filament_data = MessageTypesNfcSystem.Uni_message(65, current_sensor, MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0), 0)
-        new_filament_data = transceive(new_filament_data)
-        # Write new data if requested by user (or other instance)
-        if write_pending_for_sensor != -1:
-            write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
-            respons = transceive(write_request_message)
-            write_pending_for_sensor = -1
-        # if we deteced valid tag, perform usual loop
-        try:
-            if new_filament_data.filament_data.colour != 0:
-                # Get Object model
-                res = command_connection.perform_simple_code("""M409 K"'move.extruders"'""")
-                object_model = json.loads(res)
-                # Get extruder position
-                try:
-                    raw_extruder_move = object_model["result"][current_sensor%2]["rawPosition"]
-                except:
-                    raw_extruder_move = 0
-                current_amount_left = new_filament_data.filament_data.amount_left
-                # Calculate amount left
-                diff = raw_extruder_move - cached_amount_left[current_sensor]
-                if diff < 0:
-                    diff = 0
-                new_amount_left = current_amount_left - diff
-                # update filament_data
-                new_filament_data.filament_data.amount_left = new_amount_left
-                #cache amount left
-                cached_amount_left[current_sensor] = raw_extruder_move
-                # Get current filament used, defined by used tool
-                res = command_connection.perform_simple_code("T")
-                # Send new data to tag, only if we are printing with selected filament
-                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-                transceive(write_request_message)
-                #Update data base
-                filaments_database[current_sensor] = new_filament_data.filament_data
-            else:
-                write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
-                transceive(write_request_message)
-                # if we did not detected valid tag, check if filament is present in chamber
-                # Get State of Tray sensors:
-                try:
-                    # res = json.loads(command_connection.perform_simple_code("M1102"))
-                    # sensor_state = [res["sensor_R_0"],res["sensor_R_1"],res["sensor_R_2"]]
-                    res = command_connection.perform_simple_code("""M409 K"'sensors.gpIn"'""")
-                    parsed_json = json.loads(res)["result"]
-                    sensor_state = [parsed_json[7]["value"], parsed_json[8]["value"], parsed_json[9]["value"], parsed_json[10]["value"]]
-                    if(sensor_state[current_sensor] == 1):
-                        # Clear filament entry because filament have been removed from chamber
-                        filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0)
-                except Exception as e:
-                    print(e)
-        except Exception as e:
-            print(e)
-        # Advance sensor
-        current_sensor += 1
-        if current_sensor > (number_of_sensors-1):
-            current_sensor = 0
-        time.sleep(0.5)
+        if number_of_sensors != 0:
+            new_filament_data = MessageTypesNfcSystem.Uni_message(65, current_sensor, MessageTypesNfcSystem.Filament_data(0,0,0,0,0,0), 0)
+            new_filament_data = transceive(new_filament_data)
+            # Write new data if requested by user (or other instance)
+            if write_pending_for_sensor != -1:
+                write_request_message = MessageTypesNfcSystem.Uni_message(66, write_pending_for_sensor, filaments_database[write_pending_for_sensor], 0)
+                respons = transceive(write_request_message)
+                write_pending_for_sensor = -1
+            # if we deteced valid tag, perform usual loop
+            try:
+                if new_filament_data.filament_data.colour != 0:
+                    # Get Object model
+                    object_model = subscribe_connection.get_object_model().move.extruders
+                    # Get extruder position
+                    try:
+                        raw_extruder_move = object_model[current_sensor%2].raw_position
+                    except:
+                        raw_extruder_move = 0
+                    current_amount_left = new_filament_data.filament_data.amount_left
+                    # Calculate amount left
+                    diff = raw_extruder_move - cached_amount_left[current_sensor]
+                    if diff < 0:
+                        diff = 0
+                    new_amount_left = current_amount_left - diff
+                    # update filament_data
+                    new_filament_data.filament_data.amount_left = new_amount_left
+                    #cache amount left
+                    cached_amount_left[current_sensor] = raw_extruder_move
+                    # Get current filament used, defined by used tool
+                    res = command_connection.perform_simple_code("T")
+                    # Send new data to tag, only if we are printing with selected filament
+                    write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+                    transceive(write_request_message)
+                    #Update data base
+                    filaments_database[current_sensor] = new_filament_data.filament_data
+                else:
+                    write_request_message = MessageTypesNfcSystem.Uni_message(66, current_sensor, new_filament_data.filament_data, 0)
+                    transceive(write_request_message)
+                    # if we did not detected valid tag, check if filament is present in chamber
+                    # Get State of Tray sensors:
+                    try:
+                        # sensors_filament_runout = command_connection.perform_simple_code("""M409 K"'sensors.filamentMonitors"'""")
+                        parsed_sensors_filament_runout = subscribe_connection.get_object_model().sensors.filament_monitors
+                        sensor_state = [parsed_sensors_filament_runout[5].status, parsed_sensors_filament_runout[4].status, parsed_sensors_filament_runout[3].status, parsed_sensors_filament_runout[2].status]
+                        # res = command_connection.perform_simple_code("""M409 K"'sensors.gpIn"'""")
+                        # parsed_json = json.loads(res)["result"]
+                        # sensor_state = [parsed_json[9]["value"], parsed_json[10]["value"], parsed_json[11]["value"], parsed_json[12]["value"]]
+                        if(sensor_state[current_sensor] != 'ok'):
+                            # Clear filament entry because filament have been removed from chamber
+                            filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)
+                        else:
+                            print("filament ok at {}".format(current_sensor))
+                    except Exception as e:
+                        print(e)
+            except Exception as e:
+                print(e)
+            # Advance sensor
+            current_sensor += 1
+            if current_sensor > (number_of_sensors-1):
+                current_sensor = 0
+            time.sleep(0.5)
+        else:
+            print("unconfigured")
+            number_of_sensors = intercept_config_message()
+            time.sleep(1)
 

@@ -2,7 +2,7 @@
 filament_material_dict = {
     0: "None",
     1: "PLA",
-    2: "ABS",
+    2: "ABS-42",
     3: "PETG",
     4: "TPU",
     5: "Nylon",
