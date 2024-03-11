@@ -272,7 +272,7 @@ if __name__ == "__main__":
             current_sensor += 1
             if current_sensor > (number_of_sensors-1):
                 current_sensor = 0
-            time.sleep(0.5)
+            time.sleep(0.8)
         else:
             log.info("Slave unconfigured itself")
             number_of_sensors = intercept_config_message()
