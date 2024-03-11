@@ -1,10 +1,12 @@
 # Libraries
 import time
+import csv
 import threading
 from ctypes import *
 from multiprocessing import Queue
 import json
 from enum import IntEnum
+from os.path import exists
 #from systemd.journal import JournalHandler
 import traceback
 # Python dsf API
@@ -18,6 +20,7 @@ from Coms import *
 from nfc_logging import *
 import MessageTypesNfcSystem
 from lookup_table import GetColour, GetMaterial
+from database import write_filament
 subscribe_connection = SubscribeConnection(SubscriptionMode.FULL)
 subscribe_connection.connect()
 #Global list to store current filaments
@@ -170,7 +173,6 @@ def intercept_data_write_request():
                     write_pending_for_sensor = (sensor)
                 except:
                     pass
-            # We did not handle it so we ignore it and it will be continued to be processed
             else:
                 intercept_connection.ignore_code()
     except Exception as e:
@@ -186,7 +188,8 @@ data_write_request = threading.Thread(target=intercept_data_write_request)
 if __name__ == "__main__":
 
     # Wait for configuration gcode and cinfigure slave
-    number_of_sensors = intercept_config_message()
+    # number_of_sensors = intercept_config_message()
+    number_of_sensors = 0
     current_sensor = 0
     data_write_request.start()
     data_request.start()
@@ -195,6 +198,20 @@ if __name__ == "__main__":
     command_connection = CommandConnection(debug=False)
     command_connection.connect()
 
+    #use csv file as filament storage
+    if not exists("filaments.csv"):
+        with open('filaments.csv', 'w', newline='') as csvfile:
+            filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_NONNUMERIC)
+            for i in range(0,4):
+                filewriter.writerow([-1,-1,0,1,-1,-1])
+    # Read database content
+    with open('filaments.csv', 'r') as csvfile:
+        # Read csv content:
+        reader = csv.reader(csvfile ,quoting=csv.QUOTE_NONNUMERIC)
+        row_number = 0
+        for row in reader:
+            filaments_database[row_number] = MessageTypesNfcSystem.Filament_data(int(row[0]), int(row[1]), int(row[2]),int(row[3]), int(row[4]), int(row[5]))
+            row_number += 1
     # Main loop
     while(True):
         # Receive new filament data
@@ -209,6 +226,8 @@ if __name__ == "__main__":
             # if we deteced valid tag, perform usual loop
             try:
                 if new_filament_data.filament_data.colour != 0:
+                    # Update csv file
+                    write_filament(new_filament_data.filament_data, current_sensor)
                     # Get Object model
                     object_model = subscribe_connection.get_object_model().move.extruders
                     # Get extruder position
@@ -239,28 +258,23 @@ if __name__ == "__main__":
                     # if we did not detected valid tag, check if filament is present in chamber
                     # Get State of Tray sensors:
                     try:
-                        # sensors_filament_runout = command_connection.perform_simple_code("""M409 K"'sensors.filamentMonitors"'""")
                         parsed_sensors_filament_runout = subscribe_connection.get_object_model().sensors.filament_monitors
                         sensor_state = [parsed_sensors_filament_runout[5].status, parsed_sensors_filament_runout[4].status, parsed_sensors_filament_runout[3].status, parsed_sensors_filament_runout[2].status]
-                        # res = command_connection.perform_simple_code("""M409 K"'sensors.gpIn"'""")
-                        # parsed_json = json.loads(res)["result"]
-                        # sensor_state = [parsed_json[9]["value"], parsed_json[10]["value"], parsed_json[11]["value"], parsed_json[12]["value"]]
                         if(sensor_state[current_sensor] != 'ok'):
                             # Clear filament entry because filament have been removed from chamber
                             filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)
-                        else:
-                            print("filament ok at {}".format(current_sensor))
+                            write_filament(MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1), current_sensor)
                     except Exception as e:
-                        print(e)
+                        log.info(e)
             except Exception as e:
-                print(e)
+                log.info(e)
             # Advance sensor
             current_sensor += 1
             if current_sensor > (number_of_sensors-1):
                 current_sensor = 0
             time.sleep(0.5)
         else:
-            print("unconfigured")
+            log.info("Slave unconfigured itself")
             number_of_sensors = intercept_config_message()
             time.sleep(1)
 
