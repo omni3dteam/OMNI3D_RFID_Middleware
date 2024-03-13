@@ -228,9 +228,13 @@ if __name__ == "__main__":
                     object_model = subscribe_connection.get_object_model().move.extruders
                     # Get extruder position
                     try:
-                        raw_extruder_move = object_model[current_sensor%2].raw_position
+                        if current_sensor > 1:
+                            raw_extruder_move = object_model[0].raw_position
+                        else:
+                            raw_extruder_move = object_model[0].raw_position
                     except:
                         raw_extruder_move = 0
+                    print(raw_extruder_move)
                     current_amount_left = new_filament_data.filament_data.amount_left
                     # Calculate amount left
                     diff = raw_extruder_move - cached_amount_left[current_sensor]
