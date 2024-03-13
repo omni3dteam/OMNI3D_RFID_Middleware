@@ -1,11 +1,9 @@
 # Libraries
 import time
-import csv
 import threading
 from ctypes import *
-from multiprocessing import Queue
 import json
-from enum import IntEnum
+from array import *
 from os.path import exists
 #from systemd.journal import JournalHandler
 import traceback
@@ -13,16 +11,19 @@ import traceback
 from dsf.connections import CommandConnection
 from dsf.connections import InterceptConnection, InterceptionMode
 from dsf.commands.code import CodeType
-from dsf.object_model import MessageType, LogLevel
+from dsf.object_model import MessageType
 from dsf.connections import SubscribeConnection, SubscriptionMode
 #Modules
 from Coms import *
 from nfc_logging import *
 import MessageTypesNfcSystem
 from lookup_table import GetColour, GetMaterial
-from database import write_filament
+from database import *
 subscribe_connection = SubscribeConnection(SubscriptionMode.FULL)
 subscribe_connection.connect()
+
+command_connection = CommandConnection(debug=False)
+command_connection.connect()
 #Global list to store current filaments
 filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)))
 cached_amount_left = list((0,0,0,0))
@@ -198,20 +199,15 @@ if __name__ == "__main__":
     command_connection = CommandConnection(debug=False)
     command_connection.connect()
 
-    #use csv file as filament storage
-    if not exists("filaments.csv"):
-        with open('filaments.csv', 'w', newline='') as csvfile:
-            filewriter = csv.writer(csvfile, delimiter=',',quotechar='|', quoting=csv.QUOTE_NONNUMERIC)
-            for i in range(0,4):
-                filewriter.writerow([-1,-1,0,1,-1,-1])
-    # Read database content
-    with open('filaments.csv', 'r') as csvfile:
-        # Read csv content:
-        reader = csv.reader(csvfile ,quoting=csv.QUOTE_NONNUMERIC)
-        row_number = 0
-        for row in reader:
-            filaments_database[row_number] = MessageTypesNfcSystem.Filament_data(int(row[0]), int(row[1]), int(row[2]),int(row[3]), int(row[4]), int(row[5]))
-            row_number += 1
+    if check_if_databse_exists() == 1:
+        data = read_database()
+        filaments_database = list((MessageTypesNfcSystem.Filament_data(data[0][1], data[0][2], data[0][3], data[0][4], -1, -1),
+                                   MessageTypesNfcSystem.Filament_data(data[1][1], data[1][2], data[1][3], data[1][4], -1, -1),
+                                   MessageTypesNfcSystem.Filament_data(data[2][1], data[2][2], data[2][3], data[2][4], -1, -1),
+                                   MessageTypesNfcSystem.Filament_data(data[3][1], data[3][2], data[3][3], data[3][4], -1, -1)
+                                   ))
+        print(data)
+
     # Main loop
     while(True):
         # Receive new filament data
@@ -258,14 +254,16 @@ if __name__ == "__main__":
                     # if we did not detected valid tag, check if filament is present in chamber
                     # Get State of Tray sensors:
                     try:
-                        parsed_sensors_filament_runout = subscribe_connection.get_object_model().sensors.filament_monitors
-                        sensor_state = [parsed_sensors_filament_runout[5].status, parsed_sensors_filament_runout[4].status, parsed_sensors_filament_runout[3].status, parsed_sensors_filament_runout[2].status]
+                        parsed_sensors_filament_runout = json.loads(command_connection.perform_simple_code("""M409 K"'sensors.filamentMonitors"'"""))
+                        st = parsed_sensors_filament_runout["result"][5]["status"]
+                        sensor_state = [parsed_sensors_filament_runout["result"][5]["status"], parsed_sensors_filament_runout["result"][4]["status"], parsed_sensors_filament_runout["result"][3]["status"], parsed_sensors_filament_runout["result"][2]["status"]]
                         if(sensor_state[current_sensor] != 'ok'):
                             # Clear filament entry because filament have been removed from chamber
                             filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)
                             write_filament(MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1), current_sensor)
                     except Exception as e:
                         log.info(e)
+                print(read_database())
             except Exception as e:
                 log.info(e)
             # Advance sensor
