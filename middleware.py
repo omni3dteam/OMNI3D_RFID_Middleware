@@ -15,6 +15,7 @@ from dsf.object_model import MessageType
 from dsf.connections import SubscribeConnection, SubscriptionMode
 #Modules
 from Coms import *
+from Coms import *
 from nfc_logging import *
 import MessageTypesNfcSystem
 from lookup_table import GetColour, GetMaterial
@@ -25,11 +26,9 @@ subscribe_connection.connect()
 command_connection = CommandConnection(debug=False)
 command_connection.connect()
 #Global list to store current filaments
-filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)))
+filaments_database = list((MessageTypesNfcSystem.Filament_data(-1,-1,0.0,1.0,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0.0,1.0,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0.0,1.0,-1,-1),MessageTypesNfcSystem.Filament_data(-1,-1,0.0,1.0,-1,-1)))
 cached_amount_left = list((0,0,0,0))
 #Global variables and flags
-spin_delay = 2000
-last_nfc_check = 0
 write_pending_for_sensor = -1
 
 log.info("RFID Middleware started")
@@ -45,24 +44,24 @@ def intercept_full_data_request():
             if cde.type == CodeType.MCode and cde.majorNumber == 1003:
                 try:
                     data = {
-                        "material":[GetMaterial(filaments_database[0].material),
-                                    GetMaterial(filaments_database[1].material),
+                        "material":[GetMaterial(filaments_database[1].material),
+                                    GetMaterial(filaments_database[0].material),
                                     GetMaterial(filaments_database[2].material),
                                     GetMaterial(filaments_database[3].material)],
-                        "colour":  [GetColour  (filaments_database[0].colour),
-                                    GetColour  (filaments_database[1].colour),
+                        "colour":  [GetColour  (filaments_database[1].colour),
+                                    GetColour  (filaments_database[0].colour),
                                     GetColour  (filaments_database[2].colour),
                                     GetColour  (filaments_database[3].colour)],
-                        "amount_left": [filaments_database[0].amount_left,
-                                        filaments_database[1].amount_left,
+                        "amount_left": [filaments_database[1].amount_left,
+                                        filaments_database[0].amount_left,
                                         filaments_database[2].amount_left,
                                         filaments_database[3].amount_left],
-                        "nominal_value": [filaments_database[0].nominal_value,
-                                          filaments_database[1].nominal_value,
+                        "nominal_value": [filaments_database[1].nominal_value,
+                                          filaments_database[0].nominal_value,
                                           filaments_database[2].nominal_value,
                                           filaments_database[3].nominal_value],
-                        "percent_left": [((filaments_database[0].amount_left / filaments_database[0].nominal_value)*100),
-                                         ((filaments_database[1].amount_left / filaments_database[1].nominal_value)*100),
+                        "percent_left": [((filaments_database[1].amount_left / filaments_database[1].nominal_value)*100),
+                                         ((filaments_database[0].amount_left / filaments_database[0].nominal_value)*100),
                                          ((filaments_database[2].amount_left / filaments_database[2].nominal_value)*100),
                                          ((filaments_database[3].amount_left / filaments_database[3].nominal_value)*100)]
                         }
@@ -206,8 +205,6 @@ if __name__ == "__main__":
                                    MessageTypesNfcSystem.Filament_data(data[2][1], data[2][2], data[2][3], data[2][4], -1, -1),
                                    MessageTypesNfcSystem.Filament_data(data[3][1], data[3][2], data[3][3], data[3][4], -1, -1)
                                    ))
-        print(data)
-
     # Main loop
     while(True):
         # Receive new filament data
@@ -225,13 +222,10 @@ if __name__ == "__main__":
                     # Update csv file
                     write_filament(new_filament_data.filament_data, current_sensor)
                     # Get Object model
-                    object_model = subscribe_connection.get_object_model().move.extruders
+                    extruders = subscribe_connection.get_object_model().move.extruders
                     # Get extruder position
                     try:
-                        if current_sensor > 1:
-                            raw_extruder_move = object_model[0].raw_position
-                        else:
-                            raw_extruder_move = object_model[0].raw_position
+                        raw_extruder_move = extruders[current_sensor+2].position
                     except:
                         raw_extruder_move = 0
                     print(raw_extruder_move)
@@ -260,21 +254,20 @@ if __name__ == "__main__":
                     try:
                         parsed_sensors_filament_runout = json.loads(command_connection.perform_simple_code("""M409 K"'sensors.filamentMonitors"'"""))
                         st = parsed_sensors_filament_runout["result"][5]["status"]
-                        sensor_state = [parsed_sensors_filament_runout["result"][5]["status"], parsed_sensors_filament_runout["result"][4]["status"], parsed_sensors_filament_runout["result"][3]["status"], parsed_sensors_filament_runout["result"][2]["status"]]
+                        sensor_state = [parsed_sensors_filament_runout["result"][3]["status"], parsed_sensors_filament_runout["result"][5]["status"], parsed_sensors_filament_runout["result"][4]["status"], parsed_sensors_filament_runout["result"][2]["status"]]
                         if(sensor_state[current_sensor] != 'ok'):
                             # Clear filament entry because filament have been removed from chamber
                             filaments_database[current_sensor] = MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1)
                             write_filament(MessageTypesNfcSystem.Filament_data(-1,-1,0,1,-1,-1), current_sensor)
                     except Exception as e:
                         log.info(e)
-                print(read_database())
             except Exception as e:
                 log.info(e)
             # Advance sensor
             current_sensor += 1
             if current_sensor > (number_of_sensors-1):
                 current_sensor = 0
-            time.sleep(0.8)
+            time.sleep(0.3)
         else:
             log.info("Slave unconfigured itself")
             number_of_sensors = intercept_config_message()

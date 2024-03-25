@@ -3,7 +3,7 @@ import logging
 from systemd import journal
 
 log = logging.getLogger('RFID Logger')
-log.addHandler(journal.JournaldLogHandler())
+# log.addHandler(journal.JournaldLogHandler())
 log.setLevel(logging.INFO)
 
 def print_filament_data(filament_data, sensor):

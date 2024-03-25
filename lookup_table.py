@@ -7,7 +7,7 @@ filament_material_dict = {
     4: "TPU",
     5: "Nylon",
     6: "ASA",
-    7: "PC (Polycarbonate)",
+    7: "PC",
     8: "HIPS",
     9: "PVA",
     10: "Wood",
